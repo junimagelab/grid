@@ -32,13 +32,80 @@ let gridShiftYValue = 40; // 그리드 세로 이동량 값 (기본값 40)
 let uploadedImage = null; // 업로드된 이미지
 let useImage = false; // 이미지 사용 여부
 
+// UI(왼쪽 컨트롤바) 컨테이너 및 스케일
+let uiRoot;
+let uiScale = 1;
+
 // 왼쪽 컨트롤바(슬라이더/입력 UI) 영역을 제외한 공간을 기준으로 중앙을 잡기
 // - 캔버스는 전체 화면을 유지하되, 그리기 중심만 오른쪽으로 이동
 const CONTROL_BAR_FALLBACK_WIDTH = 270; // 대략: x=20 + width=230 + 여백
 const CONTROL_BAR_PADDING = 20;
 let controlBarWidth = CONTROL_BAR_FALLBACK_WIDTH;
 
+function getUiContentBounds() {
+  if (!uiRoot || !uiRoot.elt) return { maxRight: CONTROL_BAR_FALLBACK_WIDTH, maxBottom: 0 };
+
+  const children = Array.from(uiRoot.elt.children);
+  let maxRight = 0;
+  let maxBottom = 0;
+
+  for (const el of children) {
+    if (!el) continue;
+    const style = window.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+
+    const right = (el.offsetLeft || 0) + (el.offsetWidth || 0);
+    const bottom = (el.offsetTop || 0) + (el.offsetHeight || 0);
+    maxRight = Math.max(maxRight, right);
+    maxBottom = Math.max(maxBottom, bottom);
+  }
+
+  return { maxRight, maxBottom };
+}
+
+function applyUiScale() {
+  if (!uiRoot) return;
+
+  // UI가 들어갈 수 있는 실제 뷰포트(스크롤 없음 가정)
+  const padding = 14;
+  const availableH = Math.max(1, windowHeight - padding * 2);
+  const availableW = Math.max(1, windowWidth - padding * 2);
+
+  const { maxRight, maxBottom } = getUiContentBounds();
+  const contentW = Math.max(1, maxRight + padding);
+  const contentH = Math.max(1, maxBottom + padding);
+
+  // 자식들이 absolute라서 부모 크기가 0이 되는 문제 방지
+  uiRoot.style('width', `${contentW}px`);
+  uiRoot.style('height', `${contentH}px`);
+
+  const scaleH = availableH / contentH;
+  const scaleW = availableW / contentW;
+  uiScale = Math.min(1, scaleH, scaleW);
+
+  uiRoot.style('transform-origin', 'top left');
+  uiRoot.style('transform', `scale(${uiScale})`);
+
+  // 작은 화면에서 textarea 리사이즈가 overflow를 만들 수 있어 방지
+  if (textInput) {
+    textInput.style('resize', uiScale < 1 ? 'none' : 'vertical');
+  }
+}
+
 function updateControlBarWidth() {
+  // UI 컨테이너 기반으로 폭을 측정(스케일된 실제 픽셀 폭)
+  if (uiRoot && uiRoot.elt) {
+    try {
+      const rect = uiRoot.elt.getBoundingClientRect();
+      if (rect && rect.width > 0) {
+        controlBarWidth = Math.ceil(rect.width + CONTROL_BAR_PADDING);
+        return;
+      }
+    } catch (e) {
+      // fallback to legacy scan
+    }
+  }
+
   // p5 DOM 요소들은 대부분 absolute로 배치됨. 그중 왼쪽에 있는 것들의 최대 right를 컨트롤바 폭으로 사용.
   try {
     const elements = Array.from(document.body.querySelectorAll('*'));
@@ -230,6 +297,15 @@ function drawGlyphInBox(boxX, boxY, dx, extraX = 0, extraY = 0) {
 function setup() {
   createCanvas(windowWidth, windowHeight); // 윈도우 전체 크기
 
+  // 왼쪽 UI 컨테이너(스크롤 없이 한 화면 안에 들어오도록 scale 적용)
+  uiRoot = createDiv();
+  uiRoot.id('ui-root');
+  uiRoot.style('position', 'fixed');
+  uiRoot.style('left', '0');
+  uiRoot.style('top', '0');
+  uiRoot.style('z-index', '10000');
+  uiRoot.style('pointer-events', 'auto');
+
   // 슬라이더 커스텀 스타일 추가
   const style = document.createElement('style');
   style.textContent = `
@@ -274,6 +350,7 @@ function setup() {
 
   // 텍스트 입력창 생성 (textarea로 변경해 엔터 줄바꿈 지원)
   textInput = createElement('textarea', 'A');
+  textInput.parent(uiRoot);
   textInput.position(20, 20);
   textInput.size(223, 72);
   textInput.attribute('rows', '4');
@@ -287,54 +364,63 @@ function setup() {
 
   // 텍스트 크기 슬라이더 생성
   sizeSlider = createSlider(10, 1500, 400, 10);
+  sizeSlider.parent(uiRoot);
   sizeSlider.position(20, 140);  // 입력창 아래 10px 간격 (20 + 50 + 10 + 라벨 높이)
   sizeSlider.size(230);
   sizeSlider.style('width', '230px');
 
   // Grid Shift X 슬라이더 생성
   gridShiftXSlider = createSlider(0, 80, 40, 1); // 최소 0, 최대 80, 기본값 40, 단계 1
+  gridShiftXSlider.parent(uiRoot);
   gridShiftXSlider.position(20, 190);
   gridShiftXSlider.size(230);
   gridShiftXSlider.style('width', '230px');
 
   // Grid Shift Y 슬라이더 생성
   gridShiftYSlider = createSlider(0, 80, 40, 1); // 최소 0, 최대 80, 기본값 40, 단계 1
+  gridShiftYSlider.parent(uiRoot);
   gridShiftYSlider.position(20, 240);
   gridShiftYSlider.size(230);
   gridShiftYSlider.style('width', '230px');
 
   // 세로 확장 슬라이더 생성
   verticalShiftSlider = createSlider(-50, 50, 0, 1); // 최소 -50, 최대 50, 기본값 0, 단계 1
+  verticalShiftSlider.parent(uiRoot);
   verticalShiftSlider.position(20, 290);
   verticalShiftSlider.size(230);
   verticalShiftSlider.style('width', '230px');
 
   // Y축 압축 슬라이더 생성
   yCompressionSlider = createSlider(0, 100, 0, 1); // 최소 0, 최대 100, 기본값 0, 단계 1
+  yCompressionSlider.parent(uiRoot);
   yCompressionSlider.position(20, 340);
   yCompressionSlider.size(230);
   yCompressionSlider.style('width', '230px');
 
   // 회전 각도 슬라이더 생성
   rotationSlider = createSlider(0, 50, 0, 1); // 최소 0, 최대 50, 기본값 0, 단계 1
+  rotationSlider.parent(uiRoot);
   rotationSlider.position(20, 390);
   rotationSlider.size(230);
   rotationSlider.style('width', '230px');
 
   // Moving 슬라이더 생성
   movingSlider = createSlider(0, 100, 0, 1); // 최소 0, 최대 100, 기본값 0, 단계 1
+  movingSlider.parent(uiRoot);
   movingSlider.position(20, 440);
   movingSlider.size(230);
   movingSlider.style('width', '230px');
 
   // Speed 슬라이더 생성
   speedSlider = createSlider(0, 5, 0, 0.1); // 최소 0, 최대 5, 기본값 0, 단계 0.1
+  speedSlider.parent(uiRoot);
   speedSlider.position(20, 490);
   speedSlider.size(230);
   speedSlider.style('width', '230px');
 
   // 점선
   let dividerLine = createDiv('');
+  dividerLine.parent(uiRoot);
   dividerLine.position(20, 640);
   dividerLine.style('width', '233px');
   dividerLine.style('border-top', '2px dotted #000');
@@ -342,6 +428,7 @@ function setup() {
 
     // 점선
   let dividerLine2 = createDiv('');
+  dividerLine2.parent(uiRoot);
   dividerLine2.position(20, 870);
   dividerLine2.style('width', '233px');
   dividerLine2.style('border-top', '2px dotted #000');
@@ -349,6 +436,7 @@ function setup() {
 
   // 설명글 추가
   let descriptionText = createP('This work approaches letterforms through the logic of the grid, observing how they shift when gaps appear or individual parts take on different shapes. It experiments with recombining these fragments to question where a letter ends and a graphic begins.');
+  descriptionText.parent(uiRoot);
   descriptionText.position(20, 665);
   descriptionText.style('width', '233px');
   descriptionText.style('margin', '0');
@@ -360,6 +448,7 @@ function setup() {
 
   // 저작권 문구 추가
   let copyrightText = createP('All right reserved Dongjun Choi @COPYRIGHT 2026');
+  copyrightText.parent(uiRoot);
   copyrightText.position(20, 890);
   copyrightText.style('width', '233px');
   copyrightText.style('margin', '0');
@@ -371,12 +460,14 @@ function setup() {
 
   // 파일 입력 생성 (숨김 처리)
   fileInput = createFileInput(handleFile);
+  fileInput.parent(uiRoot);
   fileInput.position(-1000, -1000);
   fileInput.style('display', 'none');
   fileInput.attribute('accept', 'image/*');
 
   // 텍스트/이미지 전환 토글 스위치 생성
   let toggleContainer = createDiv();
+  toggleContainer.parent(uiRoot);
   toggleContainer.position(20, 575);
   toggleContainer.size(230, 30);
   toggleContainer.style('display', 'flex');
@@ -414,6 +505,7 @@ function setup() {
 
   // 워드/센텐스 전환 토글 스위치 생성 (Using Image/Text 위쪽)
   let modeToggleContainer = createDiv();
+  modeToggleContainer.parent(uiRoot);
   modeToggleContainer.position(20, 530);
   modeToggleContainer.size(230, 30);
   modeToggleContainer.style('display', 'flex');
@@ -517,48 +609,56 @@ function setup() {
 
   // 슬라이더 라벨들 추가
   let sizeLabel = createP('Size');
+  sizeLabel.parent(uiRoot);
   sizeLabel.position(20, 115);
   sizeLabel.style('margin', '0');
   sizeLabel.style('font-size', '16px');
   sizeLabel.style('color', '#000');
 
   let gridShiftXLabel = createP('Grid Shift X');
+  gridShiftXLabel.parent(uiRoot);
   gridShiftXLabel.position(20, 165);
   gridShiftXLabel.style('margin', '0');
   gridShiftXLabel.style('font-size', '16px');
   gridShiftXLabel.style('color', '#000');
 
   let gridShiftYLabel = createP('Grid Shift Y');
+  gridShiftYLabel.parent(uiRoot);
   gridShiftYLabel.position(20, 215);
   gridShiftYLabel.style('margin', '0');
   gridShiftYLabel.style('font-size', '16px');
   gridShiftYLabel.style('color', '#000');
 
   let verticalLabel = createP('Squeeze');
+  verticalLabel.parent(uiRoot);
   verticalLabel.position(20, 265);
   verticalLabel.style('margin', '0');
   verticalLabel.style('font-size', '16px');
   verticalLabel.style('color', '#000');
 
   let yCompressionLabel = createP('Compression Y');
+  yCompressionLabel.parent(uiRoot);
   yCompressionLabel.position(20, 315);
   yCompressionLabel.style('margin', '0');
   yCompressionLabel.style('font-size', '16px');
   yCompressionLabel.style('color', '#000');
 
   let rotationLabel = createP('Rotation');
+  rotationLabel.parent(uiRoot);
   rotationLabel.position(20, 365);
   rotationLabel.style('margin', '0');
   rotationLabel.style('font-size', '16px');
   rotationLabel.style('color', '#000');
 
   let movingLabel = createP('Random Motion');
+  movingLabel.parent(uiRoot);
   movingLabel.position(20, 415);
   movingLabel.style('margin', '0');
   movingLabel.style('font-size', '16px');
   movingLabel.style('color', '#000');
 
   let speedLabel = createP('Speed');
+  speedLabel.parent(uiRoot);
   speedLabel.position(20, 465);
   speedLabel.style('margin', '0');
   speedLabel.style('font-size', '16px');
@@ -618,9 +718,13 @@ function setup() {
   }
 
   // UI 생성이 끝난 뒤 컨트롤바 폭 측정
+  applyUiScale();
   updateControlBarWidth();
-  // 브라우저가 레이아웃을 확정한 뒤 한 번 더 (폰트/스타일 적용 타이밍 대비)
-  setTimeout(updateControlBarWidth, 0);
+  // 브라우저가 레이아웃/폰트를 확정한 뒤 한 번 더
+  setTimeout(() => {
+    applyUiScale();
+    updateControlBarWidth();
+  }, 0);
 }
 
 // 파일 업로드 처리 함수
@@ -1206,7 +1310,11 @@ function draw() {
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+  applyUiScale();
   updateControlBarWidth();
-  setTimeout(updateControlBarWidth, 0);
+  setTimeout(() => {
+    applyUiScale();
+    updateControlBarWidth();
+  }, 0);
   needsUpdate = true;
 }
