@@ -40,3 +40,36 @@ A p5.js-based interactive web application that allows users to apply various vis
 ## Live Demo
 
 Open `index.html` in your browser to see the interactive effects in action!
+
+## Publish (GitHub Pages)
+
+This project is a static site (plain HTML/CSS/JS), so it can be published as-is.
+
+### Option A) GitHub Pages via Actions (already configured)
+
+This repo now includes a workflow at `.github/workflows/pages.yml`.
+
+1. Push this repository to GitHub (branch name: `main`)
+2. On GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**
+3. Push to `main` (or run the workflow manually). After the workflow finishes, GitHub will show the Pages URL.
+
+### Option B) GitHub Pages from a branch (no Actions)
+
+1. On GitHub: **Settings → Pages → Build and deployment → Source: Deploy from a branch**
+2. Select branch `main` and folder `/ (root)`
+
+### Local preview (recommended)
+
+Some browsers restrict certain features when opening a file directly. A tiny local server avoids that.
+
+From this folder:
+
+- `python3 -m http.server 8000`
+- Open `http://localhost:8000/`
+
+---
+
+## 퍼블리시(배포) 요약 (Korean)
+
+- 이 프로젝트는 정적 사이트라서 그대로 GitHub Pages에 올릴 수 있어요.
+- GitHub에서 **Settings → Pages**로 가서 Source를 **GitHub Actions**(또는 branch)로 설정하면 배포됩니다.
